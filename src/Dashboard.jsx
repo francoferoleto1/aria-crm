@@ -44,6 +44,45 @@ const DEFAULT_CONTACTS = [
   {name:"Ana Quiroga",     initials:"AQ",company:"Grupo Pampa",       status:"Cerrado ganado",   value:210000,next_action:"Onboarding",            next_date:"25 Mar",notes:"Firmó el contrato anual"},
 ];
 
+const DEFAULT_OPPS = [
+  {contact_name:"Carlos Mendoza",  company:"Acme Logistics",    title:"Implementación ERP logístico",      stage:"Propuesta",   value:180000,probability:40,close_date:"30 Mar",owner:"Gonzalo Ríos",    notes:"Esperando aprobación del directorio",status:"Abierta"},
+  {contact_name:"Laura Fernández", company:"TechSur SA",        title:"Renovación plataforma SaaS",        stage:"Negociación", value:140000,probability:75,close_date:"25 Mar",owner:"Valentina Cruz",  notes:"Contrato en revisión legal",           status:"Abierta"},
+  {contact_name:"Roberto Paz",     company:"Constructora Norte",title:"Sistema de gestión de obra",        stage:"Prospección", value:90000, probability:20,close_date:"15 Abr",owner:"Gonzalo Ríos",    notes:"Primera reunión pactada",              status:"Abierta"},
+  {contact_name:"Sofía Reyes",     company:"Distribuidora Sur", title:"Módulo de facturación electrónica", stage:"Cierre",      value:78000, probability:85,close_date:"22 Mar",owner:"Valentina Cruz",  notes:"Demo aprobada, esperando PO",          status:"Abierta"},
+  {contact_name:"Diego Torres",    company:"MegaFarma SA",      title:"Integración SAP + BI",              stage:"Demo",        value:220000,probability:55,close_date:"10 Abr",owner:"Martín Pérez",    notes:"Segunda demo técnica agendada",        status:"Abierta"},
+  {contact_name:"Ana Quiroga",     company:"Grupo Pampa",       title:"Suite completa enterprise",         stage:"Ganada",      value:210000,probability:100,close_date:"01 Mar",owner:"Valentina Cruz", notes:"Contrato firmado. En onboarding.",     status:"Cerrada"},
+  {contact_name:"Pablo Rivas",     company:"Farmacorp",         title:"Módulo de compras y proveedores",   stage:"Perdida",     value:65000, probability:0, close_date:"10 Feb",owner:"Gonzalo Ríos",    notes:"Eligieron a un competidor local",      status:"Cerrada"},
+];
+
+const DEFAULT_CONTRACTS = [
+  {contact_name:"Ana Quiroga",     company:"Grupo Pampa",       title:"Contrato Anual Enterprise",  product:"Suite ARIA Enterprise",value:210000,start_date:"01 Mar 2025",end_date:"01 Mar 2026",status:"Activo",   auto_renew:true, notes:"Incluye soporte 24/7 y 10 licencias"},
+  {contact_name:"Laura Fernández", company:"TechSur SA",        title:"Licencia SaaS Pro",          product:"ARIA Pro",             value:120000,start_date:"01 Jun 2024",end_date:"01 Jun 2025",status:"Activo",   auto_renew:false,notes:"Renovación pendiente de negociación"},
+  {contact_name:"Sofía Reyes",     company:"Distribuidora Sur", title:"Módulo Facturación",         product:"ARIA Billing",         value:78000, start_date:"15 Ene 2025",end_date:"15 Ene 2026",status:"Activo",   auto_renew:true, notes:"Integración con AFIP activa"},
+  {contact_name:"Diego Torres",    company:"MegaFarma SA",      title:"Piloto Técnico 3 meses",     product:"ARIA Trial",           value:15000, start_date:"01 Feb 2025",end_date:"01 May 2025",status:"Activo",   auto_renew:false,notes:"Evaluación pre-contrato full"},
+  {contact_name:"Carlos Mendoza",  company:"Acme Logistics",    title:"Soporte extendido",          product:"ARIA Support",         value:24000, start_date:"01 Ene 2024",end_date:"01 Ene 2025",status:"Vencido",  auto_renew:false,notes:"No renovó — en conversación"},
+  {contact_name:"Pablo Rivas",     company:"Farmacorp",         title:"Licencia básica",            product:"ARIA Starter",         value:18000, start_date:"01 Mar 2024",end_date:"01 Mar 2025",status:"Cancelado",auto_renew:false,notes:"Baja solicitada en Feb 2025"},
+];
+
+const DEFAULT_TASKS = [
+  {contact_name:"Carlos Mendoza",  company:"Acme Logistics",    title:"Enviar propuesta técnica revisada",  priority:"Alta", due_date:"20 Mar",assigned_to:"Gonzalo Ríos",   status:"Pendiente",  type:"Comercial"},
+  {contact_name:"Laura Fernández", company:"TechSur SA",        title:"Seguimiento contrato con legal",     priority:"Alta", due_date:"18 Mar",assigned_to:"Valentina Cruz", status:"Pendiente",  type:"Comercial"},
+  {contact_name:"Roberto Paz",     company:"Constructora Norte",title:"Agendar demo de producto",           priority:"Media",due_date:"19 Mar",assigned_to:"Gonzalo Ríos",   status:"Pendiente",  type:"Preventa"},
+  {contact_name:"Diego Torres",    company:"MegaFarma SA",      title:"Preparar demo integración SAP",      priority:"Alta", due_date:"21 Mar",assigned_to:"Martín Pérez",    status:"En progreso",type:"Preventa"},
+  {contact_name:"Sofía Reyes",     company:"Distribuidora Sur", title:"Confirmar Purchase Order",           priority:"Alta", due_date:"22 Mar",assigned_to:"Valentina Cruz", status:"Pendiente",  type:"Comercial"},
+  {contact_name:"Ana Quiroga",     company:"Grupo Pampa",       title:"Kickoff de onboarding",              priority:"Media",due_date:"25 Mar",assigned_to:"Martín Pérez",    status:"Pendiente",  type:"Postventa"},
+  {contact_name:null,              company:null,                title:"Actualizar deck de presentación Q2", priority:"Baja", due_date:"28 Mar",assigned_to:"Gonzalo Ríos",   status:"Pendiente",  type:"Interno"},
+  {contact_name:null,              company:null,                title:"Revisión de pipeline mensual",       priority:"Media",due_date:"31 Mar",assigned_to:"Valentina Cruz", status:"Pendiente",  type:"Interno"},
+];
+
+const DEFAULT_EMAILS = [
+  {contact_name:"Carlos Mendoza",company:"Acme Logistics",subject:"Seguimiento propuesta — Implementación ERP Logístico",
+   body:`Estimado Carlos,\n\nQuería retomar nuestra conversación de la semana pasada respecto a la implementación del ERP logístico.\n\nAdjunto la propuesta técnica actualizada con los ajustes que solicitaron. Los puntos más relevantes son:\n\n• Módulo de trazabilidad en tiempo real integrado con el WMS actual\n• Capacitación incluida para 15 usuarios en las primeras 4 semanas\n• Soporte dedicado durante los primeros 3 meses de go-live\n\nQuedamos a disposición para cualquier consulta. ¿Podríamos agendar una llamada esta semana para revisar los detalles?\n\nSaludos,\nGonzalo Ríos\nARIA — Agente de Revenue Intelligence`,
+   type:"Seguimiento",sent:false},
+  {contact_name:"Diego Torres",company:"MegaFarma SA",subject:"Confirmación demo técnica — Integración SAP + BI",
+   body:`Hola Diego,\n\nConfirmo la demo técnica para el martes 21/03 a las 10:00hs.\n\nEn la sesión vamos a cubrir:\n\n• Integración bidireccional con SAP S/4HANA\n• Dashboard de BI en tiempo real con los KPIs que mencionaste\n• Flujo de aprobaciones automatizado para compras\n\nPor favor confirmame si el equipo técnico de su lado podrá estar presente — es importante para el Q&A de la integración.\n\nNos vemos el martes.\n\nMartín Pérez\nARIA — Agente de Revenue Intelligence`,
+   type:"Demo",sent:false},
+];
+
 // ── Groq helpers ────────────────────────────────────────────────────────────
 const buildSystemPrompt = (data) => `Sos ARIA, asistente comercial inteligente de una empresa argentina de software. Tenés acceso a todos los módulos del CRM.
 
@@ -273,22 +312,40 @@ export default function Dashboard({user,onLogout}) {
   const handleKey=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}};
 
   const resetDemo=async()=>{
-    if(!window.confirm("¿Restablecer todos los datos de la demo?"))return;
+    if(!window.confirm("¿Restablecer todos los datos de la demo al estado inicial?"))return;
     setResetting(true);
     try{
-      await Promise.all([
-        supabase.from("activity_log").delete().neq("id",0),
-        supabase.from("email_drafts").delete().neq("id",0),
-        supabase.from("tasks").delete().neq("id",0),
-        supabase.from("contracts").delete().neq("id",0),
-        supabase.from("opportunities").delete().neq("id",0),
-        supabase.from("contacts").delete().neq("id",0),
+      // 1. Borrar en orden correcto (respetar foreign keys)
+      await supabase.from("activity_log").delete().neq("id",0);
+      await supabase.from("email_drafts").delete().neq("id",0);
+      await supabase.from("tasks").delete().neq("id",0);
+      await supabase.from("contracts").delete().neq("id",0);
+      await supabase.from("opportunities").delete().neq("id",0);
+      await supabase.from("contacts").delete().neq("id",0);
+
+      // 2. Reinsertar contactos primero y obtener sus IDs
+      const {data:newContacts, error:ce} = await supabase.from("contacts").insert(DEFAULT_CONTACTS).select();
+      if(ce) throw ce;
+
+      // 3. Mapear nombres → IDs para foreign keys
+      const idByName = {};
+      (newContacts||[]).forEach(c => { idByName[c.name] = c.id; });
+      const withCid = (arr, nameField="contact_name") => arr.map(r => ({...r, contact_id: idByName[r[nameField]]||null}));
+
+      // 4. Insertar el resto en paralelo
+      const [oe,coe,te,ee] = await Promise.all([
+        supabase.from("opportunities").insert(withCid(DEFAULT_OPPS)),
+        supabase.from("contracts").insert(withCid(DEFAULT_CONTRACTS)),
+        supabase.from("tasks").insert(withCid(DEFAULT_TASKS)),
+        supabase.from("email_drafts").insert(withCid(DEFAULT_EMAILS)),
       ]);
-      await supabase.from("contacts").insert(DEFAULT_CONTACTS);
+      if(oe.error) throw oe.error;
+      if(coe.error) throw coe.error;
+
       await loadAll();
-      setMessages([{id:0,role:"agent",ts:new Date(),text:`Datos restablecidos ✓ Listo para una nueva demo.`}]);
+      setMessages([{id:0,role:"agent",ts:new Date(),text:`Datos restablecidos ✓\n\nTodos los módulos están en el estado inicial. Listo para una nueva demo.`}]);
       setPending(null);
-    }catch(e){alert("Error: "+e.message);}
+    }catch(e){alert("Error al resetear: "+e.message);}
     finally{setResetting(false);}
   };
 
