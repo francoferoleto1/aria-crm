@@ -1,589 +1,438 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  Cell, PieChart, Pie, Legend
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Cell, PieChart, Pie, Legend
 } from "recharts";
 
-// ─── CONFIG ─────────────────────────────────────────────────────────────────
-const GROQ_KEY   = "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";
+const GROQ_KEY   = "REEMPLAZAR_CON_TU_GROQ_KEY";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 
-// ─── DATA ────────────────────────────────────────────────────────────────────
 const INIT_CONTACTS = [
-  { id:1, name:"Carlos Mendoza",  initials:"CM", company:"Acme Logistics",     status:"Prospecto",          value:45000,  nextAction:"Enviar propuesta",        nextDate:"20 Mar", notes:"Interesado en plan enterprise" },
-  { id:2, name:"Laura Fernández", initials:"LF", company:"TechSur SA",         status:"En negociación",     value:120000, nextAction:"Llamada de seguimiento",  nextDate:"18 Mar", notes:"Revisando contrato con legal" },
-  { id:3, name:"Roberto Paz",     initials:"RP", company:"Constructora Norte", status:"Nuevo contacto",     value:0,      nextAction:"Primera llamada",         nextDate:"19 Mar", notes:"Referido por Carlos Mendoza" },
-  { id:4, name:"Sofía Reyes",     initials:"SR", company:"Distribuidora Sur",  status:"Propuesta enviada",  value:78000,  nextAction:"Esperar respuesta",       nextDate:"22 Mar", notes:"Presupuesto aprobado" },
-  { id:5, name:"Diego Torres",    initials:"DT", company:"MegaFarma SA",       status:"En negociación",     value:95000,  nextAction:"Demo técnica",            nextDate:"21 Mar", notes:"Quiere ver integración con SAP" },
-  { id:6, name:"Ana Quiroga",     initials:"AQ", company:"Grupo Pampa",        status:"Cerrado ganado",     value:210000, nextAction:"Onboarding",              nextDate:"25 Mar", notes:"Firmó el contrato anual" },
+  { id:1, name:"Carlos Mendoza",  init:"CM", company:"Acme Logistics",     status:"Prospecto",         value:45000,  nextAction:"Enviar propuesta",       nextDate:"20 Mar", notes:"Interesado en plan enterprise" },
+  { id:2, name:"Laura Fernández", init:"LF", company:"TechSur SA",         status:"En negociación",    value:120000, nextAction:"Llamada de seguimiento", nextDate:"18 Mar", notes:"Revisando contrato con legal" },
+  { id:3, name:"Roberto Paz",     init:"RP", company:"Constructora Norte", status:"Nuevo contacto",    value:0,      nextAction:"Primera llamada",        nextDate:"19 Mar", notes:"Referido por Carlos Mendoza" },
+  { id:4, name:"Sofía Reyes",     init:"SR", company:"Distribuidora Sur",  status:"Propuesta enviada", value:78000,  nextAction:"Esperar respuesta",      nextDate:"22 Mar", notes:"Presupuesto aprobado" },
+  { id:5, name:"Diego Torres",    init:"DT", company:"MegaFarma SA",       status:"En negociación",    value:95000,  nextAction:"Demo técnica",           nextDate:"21 Mar", notes:"Quiere ver integración SAP" },
+  { id:6, name:"Ana Quiroga",     init:"AQ", company:"Grupo Pampa",        status:"Cerrado ganado",    value:210000, nextAction:"Onboarding",             nextDate:"25 Mar", notes:"Firmó el contrato anual" },
 ];
 
+const STATUS_META = {
+  "Nuevo contacto":    { color:"#6366F1", bg:"#EEF2FF", text:"#4338CA" },
+  "Prospecto":         { color:"#3B82F6", bg:"#EFF6FF", text:"#1D4ED8" },
+  "Propuesta enviada": { color:"#F59E0B", bg:"#FFFBEB", text:"#B45309" },
+  "En negociación":    { color:"#F97316", bg:"#FFF7ED", text:"#C2410C" },
+  "Cerrado ganado":    { color:"#10B981", bg:"#ECFDF5", text:"#047857" },
+  "Cerrado perdido":   { color:"#EF4444", bg:"#FEF2F2", text:"#B91C1C" },
+};
 const STAGE_ORDER = ["Nuevo contacto","Prospecto","Propuesta enviada","En negociación","Cerrado ganado","Cerrado perdido"];
 
-const STATUS_META = {
-  "Nuevo contacto":    { color:"#6366F1", bg:"#EEF2FF", text:"#4F46E5" },
-  "Prospecto":         { color:"#3B82F6", bg:"#EFF6FF", text:"#2563EB" },
-  "Propuesta enviada": { color:"#F59E0B", bg:"#FFFBEB", text:"#D97706" },
-  "En negociación":    { color:"#F97316", bg:"#FFF7ED", text:"#EA580C" },
-  "Cerrado ganado":    { color:"#10B981", bg:"#ECFDF5", text:"#059669" },
-  "Cerrado perdido":   { color:"#EF4444", bg:"#FEF2F2", text:"#DC2626" },
-};
-
-// ─── GROQ CALL ───────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = (contacts) => `Sos ARIA, asistente de CRM para equipos de ventas en Argentina. Analizá el mensaje del vendedor y extraé información para actualizar el CRM.
+const SYS = (cs) => `Sos ARIA, asistente de CRM para ventas en Argentina. Analizá el mensaje y extraé datos para actualizar el CRM.
 
 Contactos actuales:
-${contacts.map(c => `ID ${c.id}: ${c.name} (${c.company}) — estado: "${c.status}", valor: $${c.value.toLocaleString("es-AR")}`).join("\n")}
+${cs.map(c=>`ID ${c.id}: ${c.name} (${c.company}) — estado: "${c.status}", valor: $${c.value.toLocaleString("es-AR")}`).join("\n")}
 
-Devolvé ÚNICAMENTE JSON válido sin markdown:
-{
-  "contactId": <número o null si no se identifica>,
-  "contactName": "<nombre detectado>",
-  "updates": {
-    "status": "<nuevo estado o null>",
-    "value": <número sin símbolos o null>,
-    "nextAction": "<próxima acción o null>",
-    "nextDate": "<DD Mmm o null>",
-    "notes": "<nota breve o null>"
-  },
-  "summary": "<una línea explicando qué cambió>"
-}
+Respondé ÚNICAMENTE con JSON válido, sin markdown, sin texto extra:
+{"contactId":<número o null>,"contactName":"<nombre detectado>","updates":{"status":"<nuevo estado o null>","value":<número sin símbolos o null>,"nextAction":"<próxima acción o null>","nextDate":"<DD Mmm o null>","notes":"<nota breve o null>"},"summary":"<una línea explicando qué cambió>"}
 
-Estados válidos: "Nuevo contacto", "Prospecto", "Propuesta enviada", "En negociación", "Cerrado ganado", "Cerrado perdido".`;
+Estados válidos: "Nuevo contacto","Prospecto","Propuesta enviada","En negociación","Cerrado ganado","Cerrado perdido".`;
 
-async function callGroq(userMsg, contacts) {
+async function callGroq(msg, cs) {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type":"application/json", "Authorization":`Bearer ${GROQ_KEY}` },
-    body: JSON.stringify({
-      model: GROQ_MODEL, max_tokens: 400, temperature: 0.1,
-      messages: [
-        { role:"system", content: SYSTEM_PROMPT(contacts) },
-        { role:"user",   content: userMsg }
-      ]
-    })
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":`Bearer ${GROQ_KEY}`},
+    body:JSON.stringify({model:GROQ_MODEL,max_tokens:400,temperature:0.1,
+      messages:[{role:"system",content:SYS(cs)},{role:"user",content:msg}]})
   });
-  if (!res.ok) throw new Error(`Groq ${res.status}`);
+  if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  const raw = data.choices[0].message.content.trim().replace(/```json|```/g,"").trim();
-  return JSON.parse(raw);
+  return JSON.parse(data.choices[0].message.content.trim().replace(/```json|```/g,"").trim());
 }
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-const fmt = (n) => n ? `$${n.toLocaleString("es-AR")}` : "—";
-const ts  = (d) => d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+const fmt = n => n ? `$${n.toLocaleString("es-AR")}` : "—";
+const hms = d => d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
 
-function buildChartData(contacts) {
-  return STAGE_ORDER.map(stage => ({
-    name: stage.replace("Propuesta enviada","Prop. enviada").replace("Nuevo contacto","Nuevo"),
-    fullName: stage,
-    cantidad: contacts.filter(c => c.status === stage).length,
-    valor: contacts.filter(c => c.status === stage).reduce((s,c) => s+c.value, 0),
-    color: STATUS_META[stage]?.color || "#94A3B8"
-  })).filter(d => d.cantidad > 0 || STAGE_ORDER.indexOf(d.fullName) < 4);
-}
-
-// ─── STYLES ──────────────────────────────────────────────────────────────────
-const S = `
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body, #root { height: 100%; }
-body { font-family: 'Plus Jakarta Sans', sans-serif; background: #F0F4FF; }
-
-.app { display:flex; flex-direction:column; height:100vh; overflow:hidden; }
-
-/* NAV */
-.nav {
-  display:flex; align-items:center; gap:12px;
-  padding:0 28px; height:58px; background:#fff;
-  border-bottom:1px solid #E2E8F0;
-  box-shadow: 0 1px 3px rgba(0,0,0,.05);
-  flex-shrink:0; z-index:10;
-}
-.nav-logo {
-  display:flex; align-items:center; gap:9px;
-}
-.nav-icon {
-  width:32px; height:32px; border-radius:9px; background:linear-gradient(135deg,#2563EB,#7C3AED);
-  display:flex; align-items:center; justify-content:center;
-}
-.nav-name { font-weight:800; font-size:18px; color:#0F172A; letter-spacing:-.4px; }
-.nav-tag  { font-size:11px; color:#94A3B8; font-weight:500; }
-.nav-sep  { flex:1; }
-.nav-pill {
-  display:flex; align-items:center; gap:6px;
-  background:#F0FDF4; border:1px solid #BBF7D0;
-  padding:4px 12px; border-radius:20px; font-size:11.5px; color:#059669; font-weight:600;
-}
-.live-dot { width:6px; height:6px; border-radius:50%; background:#10B981; animation:blink 2s infinite; }
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-
-/* BODY */
-.body { display:flex; flex:1; overflow:hidden; gap:0; }
-
-/* AGENT PANEL */
-.agent {
-  width:380px; flex-shrink:0; display:flex; flex-direction:column;
-  background:#fff; border-right:1px solid #E2E8F0;
-}
-.panel-head {
-  padding:16px 20px; border-bottom:1px solid #F1F5F9;
-  display:flex; align-items:center; gap:8px;
-}
-.panel-title { font-weight:700; font-size:13px; color:#0F172A; }
-.panel-sub   { font-size:11px; color:#94A3B8; font-weight:500; }
-
-.msgs { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px;
-  scrollbar-width:thin; scrollbar-color:#E2E8F0 transparent; }
-
-.msg { display:flex; flex-direction:column; max-width:88%; animation:fadeUp .2s ease; }
-.msg.user  { align-self:flex-end; align-items:flex-end; }
-.msg.agent { align-self:flex-start; align-items:flex-start; }
-@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-
-.bubble {
-  padding:11px 14px; border-radius:14px;
-  font-family:'JetBrains Mono',monospace; font-size:12px; line-height:1.7; white-space:pre-wrap;
-}
-.msg.user  .bubble { background:linear-gradient(135deg,#2563EB,#7C3AED); color:#fff; border-bottom-right-radius:4px; }
-.msg.agent .bubble { background:#F8FAFC; border:1px solid #E2E8F0; color:#334155; border-bottom-left-radius:4px; }
-.bts { font-size:10px; color:#CBD5E1; margin-top:3px; padding:0 2px; }
-.msg.user .bts { text-align:right; }
-
-.thinking {
-  align-self:flex-start; display:flex; align-items:center; gap:8px;
-  padding:10px 14px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:14px;
-  border-bottom-left-radius:4px; font-size:11.5px; color:#94A3B8; font-family:'JetBrains Mono',monospace;
-}
-.dots span {
-  display:inline-block; width:5px; height:5px; border-radius:50%;
-  background:#2563EB; margin:0 1.5px; animation:bounce 1s infinite;
-}
-.dots span:nth-child(2){animation-delay:.15s}.dots span:nth-child(3){animation-delay:.3s}
-@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.3}40%{transform:translateY(-5px);opacity:1}}
-
-/* CTA BUTTONS */
-.cta-row  { display:flex; gap:8px; margin-top:10px; }
-.btn-ok {
-  padding:7px 16px; background:linear-gradient(135deg,#2563EB,#7C3AED); color:#fff;
-  border:none; border-radius:8px; font-family:'Plus Jakarta Sans',sans-serif;
-  font-weight:700; font-size:12px; cursor:pointer; transition:.15s; letter-spacing:.01em;
-}
-.btn-ok:hover { opacity:.9; transform:translateY(-1px); }
-.btn-no {
-  padding:7px 14px; background:#fff; color:#64748B; border:1px solid #E2E8F0;
-  border-radius:8px; font-family:'Plus Jakarta Sans',sans-serif; font-size:12px;
-  cursor:pointer; transition:.15s; font-weight:500;
-}
-.btn-no:hover { border-color:#CBD5E1; color:#334155; }
-
-/* INPUT */
-.input-area {
-  padding:12px 16px; border-top:1px solid #F1F5F9;
-  display:flex; gap:8px; align-items:flex-end; background:#fff;
-}
-.textarea {
-  flex:1; background:#F8FAFC; border:1.5px solid #E2E8F0; border-radius:10px;
-  padding:10px 13px; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px;
-  color:#0F172A; resize:none; outline:none; min-height:42px; max-height:88px;
-  line-height:1.5; transition:border-color .2s;
-}
-.textarea:focus { border-color:#93C5FD; background:#fff; }
-.textarea::placeholder { color:#CBD5E1; }
-.icon-btn {
-  width:42px; height:42px; border-radius:10px; border:1.5px solid #E2E8F0;
-  background:#F8FAFC; cursor:pointer; display:flex; align-items:center;
-  justify-content:center; flex-shrink:0; transition:.2s;
-}
-.icon-btn:hover { border-color:#93C5FD; background:#EFF6FF; }
-.icon-btn.live {
-  background:#EFF6FF; border-color:#2563EB;
-  animation:pulse 1.2s infinite;
-}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.3)}50%{box-shadow:0 0 0 8px rgba(37,99,235,0)}}
-.send-btn {
-  width:42px; height:42px; border-radius:10px; border:none;
-  background:linear-gradient(135deg,#2563EB,#7C3AED); color:#fff;
-  cursor:pointer; display:flex; align-items:center; justify-content:center;
-  flex-shrink:0; transition:.2s;
-}
-.send-btn:hover:not(:disabled) { opacity:.9; transform:translateY(-1px); }
-.send-btn:disabled { background:#E2E8F0; cursor:not-allowed; }
-
-/* CRM PANEL */
-.crm { flex:1; display:flex; flex-direction:column; overflow:hidden; }
-.crm-scroll { flex:1; overflow-y:auto; padding:20px 24px; display:flex; flex-direction:column; gap:20px;
-  scrollbar-width:thin; scrollbar-color:#E2E8F0 transparent; }
-
-/* KPI ROW */
-.kpi-row { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
-.kpi {
-  background:#fff; border:1px solid #E2E8F0; border-radius:14px; padding:16px 18px;
-  transition:box-shadow .2s;
-}
-.kpi:hover { box-shadow:0 4px 16px rgba(0,0,0,.07); }
-.kpi-label { font-size:11px; color:#94A3B8; font-weight:600; text-transform:uppercase; letter-spacing:.07em; margin-bottom:8px; }
-.kpi-value { font-size:22px; font-weight:800; color:#0F172A; letter-spacing:-.5px; }
-.kpi-sub   { font-size:11px; color:#94A3B8; margin-top:3px; }
-.kpi-green .kpi-value { color:#059669; }
-.kpi-blue  .kpi-value { color:#2563EB; }
-
-/* CHARTS ROW */
-.charts-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-.chart-card {
-  background:#fff; border:1px solid #E2E8F0; border-radius:14px; padding:18px 20px;
-}
-.chart-head { font-weight:700; font-size:13px; color:#0F172A; margin-bottom:4px; }
-.chart-sub  { font-size:11px; color:#94A3B8; margin-bottom:16px; }
-
-/* CARDS GRID */
-.cards-section {}
-.section-title { font-weight:700; font-size:13px; color:#0F172A; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
-.cards-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
-
-.card {
-  background:#fff; border:1px solid #E2E8F0; border-radius:14px; padding:16px;
-  transition:box-shadow .25s, border-color .3s, transform .25s; cursor:default;
-  position:relative; overflow:hidden;
-}
-.card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); }
-.card.updated {
-  border-color:#2563EB; box-shadow:0 0 0 3px rgba(37,99,235,.12);
-  animation:cardPop .5s ease;
-}
-@keyframes cardPop{0%{transform:scale(1)}30%{transform:scale(1.025)}100%{transform:scale(1)}}
-
-.card-accent { position:absolute; top:0; left:0; right:0; height:3px; }
-
-.card-top { display:flex; align-items:center; gap:11px; margin-bottom:14px; }
-.av {
-  width:38px; height:38px; border-radius:10px; display:flex; align-items:center;
-  justify-content:center; font-weight:800; font-size:12px; flex-shrink:0;
-}
-.card-info { flex:1; min-width:0; }
-.card-name { font-weight:700; font-size:13.5px; color:#0F172A; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.card-co   { font-size:11px; color:#94A3B8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
-.badge {
-  padding:3px 9px; border-radius:6px; font-size:10px; font-weight:700;
-  letter-spacing:.02em; white-space:nowrap; flex-shrink:0;
-}
-
-.card-fields { display:flex; flex-direction:column; gap:0; }
-.cf { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid #F8FAFC; font-size:11.5px; }
-.cf:last-child { border-bottom:none; }
-.cf-l { color:#94A3B8; font-weight:500; }
-.cf-v { color:#334155; font-weight:600; text-align:right; max-width:55%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cf-v.money { color:#2563EB; }
-
-.card-note {
-  margin-top:10px; padding:7px 10px; background:#F8FAFC; border-radius:7px;
-  font-size:11px; color:#64748B; line-height:1.5; font-style:italic;
-}
-
-/* TOOLTIP */
-.custom-tip { background:#fff; border:1px solid #E2E8F0; border-radius:8px; padding:8px 12px; box-shadow:0 4px 12px rgba(0,0,0,.1); font-size:12px; }
-.custom-tip .label { font-weight:700; color:#0F172A; margin-bottom:3px; }
-.custom-tip .val   { color:#2563EB; font-weight:600; }
-`;
-
-// ─── CUSTOM TOOLTIP ───────────────────────────────────────────────────────────
-const CustomTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
+const CustomTip = ({active,payload}) => {
+  if (!active||!payload?.length) return null;
+  const p = payload[0];
   return (
-    <div className="custom-tip">
-      <div className="label">{payload[0]?.payload?.fullName || label}</div>
-      {payload.map((p, i) => (
-        <div key={i} className="val">{p.name}: {p.name === "Valor" ? fmt(p.value) : p.value}</div>
-      ))}
+    <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 12px",fontSize:12,boxShadow:"0 4px 12px rgba(0,0,0,.1)"}}>
+      <div style={{fontWeight:700,color:"#0F172A",marginBottom:2}}>{p.payload.fullName}</div>
+      <div style={{color:p.payload.color,fontWeight:600}}>{fmt(p.value)}</div>
     </div>
   );
 };
 
-// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// ── Voice hook ──────────────────────────────────────────────────────────────
+function useVoice({ onTranscript, onError }) {
+  const [state, setState]     = useState("idle");
+  const [interim, setInterim] = useState("");
+  const recognRef             = useRef(null);
+  const finalRef              = useRef("");
+  const stateRef              = useRef("idle");
+
+  const setS = (s) => { stateRef.current = s; setState(s); };
+  const isSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  const start = useCallback(async () => {
+    if (!isSupported) { onError("Usá Chrome o Edge para reconocimiento de voz."); return; }
+    setS("requesting");
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setS("error");
+      onError("Permiso de micrófono denegado. Habilitalo en la barra del navegador (ícono del candado).");
+      setTimeout(() => setS("idle"), 4000);
+      return;
+    }
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const r  = new SR();
+    r.lang           = "es-AR";
+    r.continuous     = true;
+    r.interimResults = true;
+    finalRef.current = "";
+
+    r.onstart  = () => setS("listening");
+    r.onresult = (e) => {
+      let iText = "", fText = finalRef.current;
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        e.results[i].isFinal ? (fText += t + " ") : (iText += t);
+      }
+      finalRef.current = fText;
+      setInterim(iText);
+      onTranscript(fText + iText);
+    };
+    r.onerror = (e) => {
+      console.error("Speech error:", e.error);
+      setS("error");
+      const msgs = {
+        "not-allowed":   "Permiso denegado. Habilitá el micrófono en el navegador.",
+        "no-speech":     "No se detectó voz. Hablá más cerca del micrófono.",
+        "network":       "Error de red con el servicio de voz.",
+        "audio-capture": "No se detectó micrófono.",
+        "aborted":       "Reconocimiento cancelado.",
+      };
+      onError(msgs[e.error] || `Error: ${e.error}`);
+      setTimeout(() => setS("idle"), 3500);
+    };
+    r.onend = () => {
+      // Chrome para solo — reiniciarlo si seguimos escuchando
+      if (stateRef.current === "listening") {
+        try { r.start(); return; } catch(_) {}
+      }
+      setInterim("");
+      setS("idle");
+    };
+
+    recognRef.current = r;
+    try { r.start(); } catch(e) { setS("error"); onError(`No se pudo iniciar: ${e.message}`); setTimeout(() => setS("idle"), 3000); }
+  }, [isSupported, onTranscript, onError]);
+
+  const stop = useCallback(() => {
+    setS("idle");
+    recognRef.current?.stop();
+    recognRef.current = null;
+    setInterim("");
+  }, []);
+
+  return { state, interim, start, stop, isSupported };
+}
+
+// ── App ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [contacts, setContacts]         = useState(INIT_CONTACTS);
-  const [input, setInput]               = useState("");
-  const [isListening, setIsListening]   = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [pendingUpdate, setPendingUpdate] = useState(null);
-  const [updatedId, setUpdatedId]       = useState(null);
-  const [messages, setMessages]         = useState([{
-    id:0, role:"agent", ts: new Date(),
-    text:"Hola 👋 Soy ARIA, tu asistente comercial inteligente.\n\nDictame o escribime una actualización de cualquier cliente y la registro en el CRM al instante."
-  }]);
+  const [contacts, setContacts]     = useState(INIT_CONTACTS);
+  const [input, setInput]           = useState("");
+  const [processing, setProcessing] = useState(false);
+  const [pending, setPending]       = useState(null);
+  const [flashId, setFlashId]       = useState(null);
+  const [messages, setMessages]     = useState([{id:0,role:"agent",ts:new Date(),
+    text:"Hola 👋 Soy ARIA, tu asistente comercial.\n\nHablá o escribí una actualización de cualquier cliente y la registro en el CRM al instante."}]);
 
-  const msgId    = useRef(1);
-  const recogn   = useRef(null);
-  const endRef   = useRef(null);
-  const textaRef = useRef(null);
+  const mid    = useRef(1);
+  const bottom = useRef(null);
+  useEffect(() => { bottom.current?.scrollIntoView({behavior:"smooth"}); }, [messages, processing]);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior:"smooth" }); }, [messages, isProcessing]);
-
-  const addMsg = (role, text, extra = {}) => {
-    const id = msgId.current++;
-    setMessages(prev => [...prev, { id, role, text, ts: new Date(), ...extra }]);
+  const addMsg = (role, text, extra={}) => {
+    const id = mid.current++;
+    setMessages(p => [...p, {id, role, text, ts:new Date(), ...extra}]);
     return id;
   };
 
-  const startListen = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { addMsg("agent","Tu navegador no soporta voz. Usá Chrome o Edge."); return; }
-    const r = new SR(); r.lang="es-AR"; r.continuous=false; r.interimResults=true;
-    r.onresult = e => setInput(Array.from(e.results).map(x=>x[0].transcript).join(""));
-    r.onend  = () => setIsListening(false);
-    r.onerror = () => setIsListening(false);
-    r.start(); recogn.current = r; setIsListening(true);
-  };
-  const stopListen = () => { recogn.current?.stop(); setIsListening(false); };
+  const handleTranscript = useCallback(t => setInput(t), []);
+  const handleVoiceError  = useCallback(msg => addMsg("agent", `⚠️ ${msg}`), []);
+  const { state:micState, interim, start:startListen, stop:stopListen, isSupported } = useVoice({
+    onTranscript: handleTranscript,
+    onError:      handleVoiceError,
+  });
 
   const send = async () => {
-    const text = input.trim();
-    if (!text || isProcessing) return;
-    setInput(""); addMsg("user", text); setIsProcessing(true);
+    const t = input.trim();
+    if (!t || processing) return;
+    if (micState === "listening") stopListen();
+    setInput("");
+    addMsg("user", t);
+    setProcessing(true);
     try {
-      const parsed = await callGroq(text, contacts);
-      const id = msgId.current++;
-      setMessages(prev => [...prev, {
-        id, role:"agent", ts: new Date(),
-        text: `Encontré una actualización para **${parsed.contactName}**:\n${parsed.summary}\n\n¿Confirmo los cambios en el CRM?`,
-        updateData: parsed
-      }]);
-      setPendingUpdate({ ...parsed, msgId: id });
-    } catch(err) {
-      addMsg("agent", `Error al procesar. Intentá de nuevo.\n(${err.message})`);
-    } finally { setIsProcessing(false); }
+      const p = await callGroq(t, contacts);
+      const id = mid.current++;
+      setMessages(prev => [...prev, {id, role:"agent", ts:new Date(),
+        text:`Encontré una actualización para **${p.contactName}**:\n${p.summary}\n\n¿Confirmo los cambios en el CRM?`,
+        updateData:p}]);
+      setPending({...p, msgId:id});
+    } catch(e) { addMsg("agent", `Error: ${e.message}`); }
+    finally    { setProcessing(false); }
   };
 
   const confirm = () => {
-    if (!pendingUpdate) return;
-    const { contactId, contactName, updates } = pendingUpdate;
+    if (!pending) return;
+    const {contactId, contactName, updates} = pending;
     if (contactId) {
       setContacts(prev => prev.map(c => {
         if (c.id !== contactId) return c;
-        return {
-          ...c,
-          ...(updates.status     != null && { status:     updates.status }),
-          ...(updates.value      != null && { value:      updates.value }),
-          ...(updates.nextAction != null && { nextAction: updates.nextAction }),
-          ...(updates.nextDate   != null && { nextDate:   updates.nextDate }),
-          ...(updates.notes      != null && { notes:      updates.notes }),
+        return {...c,
+          ...(updates.status     != null && {status:updates.status}),
+          ...(updates.value      != null && {value:updates.value}),
+          ...(updates.nextAction != null && {nextAction:updates.nextAction}),
+          ...(updates.nextDate   != null && {nextDate:updates.nextDate}),
+          ...(updates.notes      != null && {notes:updates.notes}),
         };
       }));
-      setUpdatedId(contactId);
-      setTimeout(() => setUpdatedId(null), 3000);
+      setFlashId(contactId);
+      setTimeout(() => setFlashId(null), 3000);
     }
     addMsg("agent", `✓ CRM actualizado. Los datos de ${contactName} están sincronizados.`);
-    setPendingUpdate(null);
+    setPending(null);
   };
-
-  const reject = () => {
-    addMsg("agent","Cambios descartados. Podés corregir el mensaje y reenviar.");
-    setPendingUpdate(null);
-  };
-
+  const reject   = () => { addMsg("agent","Cambios descartados. Podés corregir y reenviar."); setPending(null); };
   const handleKey = e => { if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
 
-  // derived data
-  const totalPipeline = contacts.reduce((s,c) => s + c.value, 0);
-  const openDeals     = contacts.filter(c => !["Cerrado ganado","Cerrado perdido"].includes(c.status)).length;
-  const wonDeals      = contacts.filter(c => c.status==="Cerrado ganado").length;
-  const wonValue      = contacts.filter(c => c.status==="Cerrado ganado").reduce((s,c)=>s+c.value,0);
-  const chartData     = buildChartData(contacts);
-  const pieData       = chartData.map(d => ({ name: d.fullName, value: d.cantidad, color: d.color }));
+  const pipeline = contacts.reduce((s,c) => s+c.value, 0);
+  const won      = contacts.filter(c => c.status==="Cerrado ganado");
+  const active   = contacts.filter(c => !["Cerrado ganado","Cerrado perdido"].includes(c.status));
+  const chartData = STAGE_ORDER.map(s => ({
+    name: s.replace("Propuesta enviada","Prop. enviada").replace("Nuevo contacto","Nuevo"),
+    fullName:s, color:STATUS_META[s]?.color||"#94A3B8",
+    Valor: contacts.filter(c=>c.status===s).reduce((a,c)=>a+c.value,0),
+  })).filter(d => d.Valor > 0);
+  const pieData = STAGE_ORDER.map(s => ({
+    name:s, value:contacts.filter(c=>c.status===s).length, color:STATUS_META[s]?.color||"#94A3B8"
+  })).filter(d => d.value > 0);
+
+  const micC = {
+    idle:       {border:"#E2E8F0",bg:"#F8FAFC",icon:"#94A3B8",anim:"none"},
+    requesting: {border:"#FCD34D",bg:"#FFFBEB",icon:"#D97706",anim:"none"},
+    listening:  {border:"#2563EB",bg:"#EFF6FF",icon:"#2563EB",anim:"pulse 1.2s infinite"},
+    error:      {border:"#FECACA",bg:"#FEF2F2",icon:"#EF4444",anim:"none"},
+  }[micState] || {border:"#E2E8F0",bg:"#F8FAFC",icon:"#94A3B8",anim:"none"};
+
+  const card = {background:"#fff",border:"1px solid #E2E8F0",borderRadius:13,padding:"16px 18px"};
 
   return (
-    <>
-      <style>{S}</style>
-      <div className="app">
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#F0F4FF",fontFamily:"'Plus Jakarta Sans',system-ui,sans-serif",overflow:"hidden"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#E2E8F0;border-radius:4px}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+        @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.35)}50%{box-shadow:0 0 0 9px rgba(37,99,235,0)}}
+        @keyframes livePulse{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.4)}50%{box-shadow:0 0 0 7px rgba(16,185,129,0)}}
+        @keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.3}40%{transform:translateY(-4px);opacity:1}}
+        textarea:focus{outline:none!important;border-color:#93C5FD!important;background:#fff!important}
+        textarea::placeholder{color:#CBD5E1}
+      `}</style>
 
-        {/* NAV */}
-        <nav className="nav">
-          <div className="nav-logo">
-            <div className="nav-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-            </div>
+      {/* NAV */}
+      <nav style={{height:54,background:"#fff",borderBottom:"1px solid #E2E8F0",display:"flex",alignItems:"center",padding:"0 22px",gap:10,flexShrink:0,boxShadow:"0 1px 3px rgba(0,0,0,.04)"}}>
+        <div style={{width:30,height:30,borderRadius:8,background:"linear-gradient(135deg,#2563EB,#7C3AED)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </div>
+        <div>
+          <div style={{fontWeight:800,fontSize:15,color:"#0F172A",letterSpacing:"-.3px",lineHeight:1.1}}>ARIA</div>
+          <div style={{fontSize:9.5,color:"#94A3B8",fontWeight:500}}>Agente de Revenue Intelligence</div>
+        </div>
+        <div style={{flex:1}}/>
+        <div style={{display:"flex",alignItems:"center",gap:5,background:"#F0FDF4",border:"1px solid #BBF7D0",padding:"3px 11px",borderRadius:20,fontSize:10.5,color:"#059669",fontWeight:600}}>
+          <div style={{width:5,height:5,borderRadius:"50%",background:"#10B981",animation:"livePulse 2s infinite"}}/>
+          Sistema activo
+        </div>
+      </nav>
+
+      <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+        {/* AGENT */}
+        <aside style={{width:360,flexShrink:0,display:"flex",flexDirection:"column",background:"#fff",borderRight:"1px solid #E2E8F0"}}>
+          <div style={{padding:"12px 16px",borderBottom:"1px solid #F1F5F9",display:"flex",alignItems:"center",gap:8}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2m-3.5-7.5-1.5 1.5m-10 10-1.5 1.5m0-13 1.5 1.5m10 10 1.5 1.5"/></svg>
             <div>
-              <div className="nav-name">ARIA</div>
-              <div className="nav-tag">Agente de Revenue Intelligence</div>
+              <div style={{fontWeight:700,fontSize:12.5,color:"#0F172A"}}>Agente Comercial</div>
+              <div style={{fontSize:9.5,color:"#94A3B8"}}>Groq · Llama 3.3 70B</div>
             </div>
           </div>
-          <div className="nav-sep" />
-          <div className="nav-pill"><div className="live-dot"/>Sistema activo</div>
-        </nav>
 
-        <div className="body">
-
-          {/* ── AGENT ── */}
-          <aside className="agent">
-            <div className="panel-head">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2m-3.5-7.5-1.5 1.5m-10 10-1.5 1.5m0-13 1.5 1.5m10 10 1.5 1.5"/></svg>
-              <div>
-                <div className="panel-title">Agente Comercial</div>
-                <div className="panel-sub">Groq · Llama 3.3 70B</div>
+          <div style={{flex:1,overflowY:"auto",padding:12,display:"flex",flexDirection:"column",gap:10}}>
+            {messages.map(m => (
+              <div key={m.id} style={{display:"flex",flexDirection:"column",alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"90%",animation:"fadeUp .2s ease"}}>
+                <div style={{padding:"9px 12px",borderRadius:12,fontFamily:"'JetBrains Mono',monospace",fontSize:11,lineHeight:1.7,whiteSpace:"pre-wrap",
+                  ...(m.role==="user"
+                    ?{background:"linear-gradient(135deg,#2563EB,#7C3AED)",color:"#fff",borderBottomRightRadius:3}
+                    :{background:"#F8FAFC",border:"1px solid #E2E8F0",color:"#334155",borderBottomLeftRadius:3})}}>
+                  {m.text}
+                  {m.updateData && pending && (
+                    <div style={{display:"flex",gap:7,marginTop:9}}>
+                      <button onClick={confirm} style={{padding:"5px 13px",background:"linear-gradient(135deg,#2563EB,#7C3AED)",color:"#fff",border:"none",borderRadius:7,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,cursor:"pointer"}}>✓ Confirmar</button>
+                      <button onClick={reject}  style={{padding:"5px 11px",background:"#fff",color:"#64748B",border:"1px solid #E2E8F0",borderRadius:7,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:11,cursor:"pointer"}}>Descartar</button>
+                    </div>
+                  )}
+                </div>
+                <div style={{fontSize:9,color:"#CBD5E1",marginTop:2,padding:"0 2px",textAlign:m.role==="user"?"right":"left"}}>{hms(m.ts)}</div>
               </div>
-            </div>
+            ))}
+            {processing && (
+              <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:12,borderBottomLeftRadius:3,fontFamily:"'JetBrains Mono',monospace",fontSize:10.5,color:"#94A3B8",alignSelf:"flex-start"}}>
+                {[0,.15,.3].map((d,i)=><span key={i} style={{display:"inline-block",width:4,height:4,borderRadius:"50%",background:"#3B82F6",animation:`bounce 1s ${d}s infinite`}}/>)}
+                <span style={{marginLeft:4}}>Analizando...</span>
+              </div>
+            )}
+            <div ref={bottom}/>
+          </div>
 
-            <div className="msgs">
-              {messages.map(m => (
-                <div key={m.id} className={`msg ${m.role}`}>
-                  <div className="bubble">
-                    {m.text}
-                    {m.updateData && pendingUpdate && (
-                      <div className="cta-row">
-                        <button className="btn-ok" onClick={confirm}>✓ Confirmar</button>
-                        <button className="btn-no" onClick={reject}>Descartar</button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="bts">{ts(m.ts)}</div>
-                </div>
-              ))}
-              {isProcessing && (
-                <div className="thinking">
-                  <div className="dots"><span/><span/><span/></div>
-                  Analizando...
-                </div>
-              )}
-              <div ref={endRef}/>
-            </div>
-
-            <div className="input-area">
+          {/* INPUT */}
+          <div style={{padding:"10px 12px",borderTop:"1px solid #F1F5F9",background:"#fff"}}>
+            {micState !== "idle" && (
+              <div style={{marginBottom:8,padding:"6px 10px",borderRadius:7,
+                background:micState==="listening"?"#EFF6FF":micState==="error"?"#FEF2F2":"#FFFBEB",
+                border:`1px solid ${micState==="listening"?"#BFDBFE":micState==="error"?"#FECACA":"#FDE68A"}`,
+                fontSize:10.5,color:micState==="listening"?"#1D4ED8":micState==="error"?"#B91C1C":"#92400E",
+                fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,display:"flex",alignItems:"center",gap:6}}>
+                {micState==="listening" && <span style={{width:6,height:6,borderRadius:"50%",background:"#2563EB",display:"inline-block",animation:"pulse 1s infinite",flexShrink:0}}/>}
+                <span>
+                  {micState==="listening"
+                    ? `🎙 Escuchando${interim ? `: "${interim}"` : "..."}`
+                    : micState==="requesting" ? "Solicitando permiso de micrófono..."
+                    : "Error de micrófono — revisá los permisos"}
+                </span>
+              </div>
+            )}
+            <div style={{display:"flex",gap:7,alignItems:"flex-end"}}>
               <button
-                className={`icon-btn ${isListening ? "live" : ""}`}
-                onClick={isListening ? stopListen : startListen}
-                title={isListening ? "Detener" : "Hablar"}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isListening ? "#2563EB" : "#94A3B8"} strokeWidth="2">
-                  <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                  <line x1="12" y1="19" x2="12" y2="23"/>
-                  <line x1="8" y1="23" x2="16" y2="23"/>
-                </svg>
+                onClick={micState==="listening" ? stopListen : startListen}
+                disabled={micState==="requesting"}
+                title={micState==="listening"?"Detener":"Hablar"}
+                style={{width:40,height:40,borderRadius:9,flexShrink:0,border:`1.5px solid ${micC.border}`,background:micC.bg,
+                  cursor:micState==="requesting"?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+                  animation:micC.anim,transition:"all .2s"}}>
+                {micState==="listening"
+                  ? <svg width="13" height="13" viewBox="0 0 24 24" fill={micC.icon} stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                  : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={micC.icon} strokeWidth="2">
+                      <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                      <line x1="12" y1="19" x2="12" y2="23"/>
+                      <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                }
               </button>
               <textarea
-                ref={textaRef}
-                className="textarea"
-                placeholder='Ej: "Laura de TechSur cerró el deal por $140k, firma el jueves"'
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKey}
-                rows={1}
+                style={{flex:1,background:"#F8FAFC",border:"1.5px solid #E2E8F0",borderRadius:9,padding:"9px 11px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,color:"#0F172A",resize:"none",minHeight:40,maxHeight:80,lineHeight:1.5}}
+                placeholder='Ej: "Laura de TechSur cerró el deal por $140k"'
+                value={input} onChange={e=>setInput(e.target.value)} onKeyDown={handleKey} rows={1}
               />
-              <button className="send-btn" onClick={send} disabled={isProcessing || !input.trim()}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
-                  <line x1="22" y1="2" x2="11" y2="13"/>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              <button onClick={send} disabled={processing||!input.trim()}
+                style={{width:40,height:40,borderRadius:9,border:"none",flexShrink:0,
+                  background:processing||!input.trim()?"#E2E8F0":"linear-gradient(135deg,#2563EB,#7C3AED)",
+                  cursor:processing||!input.trim()?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
                 </svg>
               </button>
             </div>
-          </aside>
+            {!isSupported && <div style={{marginTop:6,fontSize:10,color:"#EF4444",textAlign:"center"}}>Reconocimiento de voz no disponible. Usá Chrome o Edge.</div>}
+          </div>
+        </aside>
 
-          {/* ── CRM ── */}
-          <main className="crm">
-            <div className="crm-scroll">
-
-              {/* KPIs */}
-              <div className="kpi-row">
-                <div className="kpi kpi-blue">
-                  <div className="kpi-label">Pipeline total</div>
-                  <div className="kpi-value">{fmt(totalPipeline)}</div>
-                  <div className="kpi-sub">En todos los stages</div>
-                </div>
-                <div className="kpi kpi-green">
-                  <div className="kpi-label">Cerrado ganado</div>
-                  <div className="kpi-value">{fmt(wonValue)}</div>
-                  <div className="kpi-sub">{wonDeals} deal{wonDeals!==1?"s":""} cerrado{wonDeals!==1?"s":""}</div>
-                </div>
-                <div className="kpi">
-                  <div className="kpi-label">Deals activos</div>
-                  <div className="kpi-value">{openDeals}</div>
-                  <div className="kpi-sub">En progreso</div>
-                </div>
-                <div className="kpi">
-                  <div className="kpi-label">Contactos</div>
-                  <div className="kpi-value">{contacts.length}</div>
-                  <div className="kpi-sub">En el pipeline</div>
-                </div>
+        {/* CRM */}
+        <main style={{flex:1,overflowY:"auto",padding:18,display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:11}}>
+            {[
+              {label:"Pipeline total", value:fmt(pipeline), sub:"En todos los stages", accent:"#2563EB"},
+              {label:"Cerrado ganado", value:fmt(won.reduce((s,c)=>s+c.value,0)), sub:`${won.length} deal${won.length!==1?"s":""} cerrado${won.length!==1?"s":""}`, accent:"#059669"},
+              {label:"Deals activos",  value:String(active.length), sub:"En progreso", accent:"#0F172A"},
+              {label:"Contactos",      value:String(contacts.length), sub:"En el pipeline", accent:"#0F172A"},
+            ].map((k,i)=>(
+              <div key={i} style={{...card,padding:"14px 16px"}}>
+                <div style={{fontSize:10,color:"#94A3B8",fontWeight:700,textTransform:"uppercase",letterSpacing:".07em",marginBottom:6}}>{k.label}</div>
+                <div style={{fontSize:21,fontWeight:800,color:k.accent,letterSpacing:"-.5px"}}>{k.value}</div>
+                <div style={{fontSize:10.5,color:"#94A3B8",marginTop:2}}>{k.sub}</div>
               </div>
+            ))}
+          </div>
 
-              {/* CHARTS */}
-              <div className="charts-row">
-                <div className="chart-card">
-                  <div className="chart-head">Pipeline por etapa</div>
-                  <div className="chart-sub">Valor total ($) en cada etapa</div>
-                  <ResponsiveContainer width="100%" height={170}>
-                    <BarChart data={chartData} margin={{top:4,right:4,left:4,bottom:4}}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false}/>
-                      <XAxis dataKey="name" tick={{fontSize:10,fill:"#94A3B8",fontFamily:"Plus Jakarta Sans"}} axisLine={false} tickLine={false}/>
-                      <YAxis hide/>
-                      <Tooltip content={<CustomTooltip/>}/>
-                      <Bar dataKey="valor" name="Valor" radius={[6,6,0,0]} maxBarSize={48}>
-                        {chartData.map((entry,i) => <Cell key={i} fill={entry.color}/>)}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="chart-card">
-                  <div className="chart-head">Distribución de contactos</div>
-                  <div className="chart-sub">Cantidad por estado</div>
-                  <ResponsiveContainer width="100%" height={170}>
-                    <PieChart>
-                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value">
-                        {pieData.map((entry,i) => <Cell key={i} fill={entry.color}/>)}
-                      </Pie>
-                      <Tooltip formatter={(v,n,p) => [v, p.payload.name]}/>
-                      <Legend iconType="circle" iconSize={8} wrapperStyle={{fontSize:"10px",fontFamily:"Plus Jakarta Sans"}}/>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* CARDS */}
-              <div className="cards-section">
-                <div className="section-title">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                  Contactos del pipeline
-                </div>
-                <div className="cards-grid">
-                  {contacts.map(c => {
-                    const meta = STATUS_META[c.status] || { color:"#94A3B8", bg:"#F8FAFC", text:"#64748B" };
-                    return (
-                      <div key={c.id} className={`card ${updatedId===c.id?"updated":""}`}>
-                        <div className="card-accent" style={{background:meta.color}}/>
-                        <div className="card-top">
-                          <div className="av" style={{background:meta.bg, color:meta.text}}>{c.initials}</div>
-                          <div className="card-info">
-                            <div className="card-name">{c.name}</div>
-                            <div className="card-co">{c.company}</div>
-                          </div>
-                          <div className="badge" style={{background:meta.bg, color:meta.text}}>{c.status}</div>
-                        </div>
-                        <div className="card-fields">
-                          <div className="cf">
-                            <span className="cf-l">Valor</span>
-                            <span className={`cf-v ${c.value>0?"money":""}`}>{fmt(c.value)}</span>
-                          </div>
-                          <div className="cf">
-                            <span className="cf-l">Próxima acción</span>
-                            <span className="cf-v">{c.nextAction}</span>
-                          </div>
-                          <div className="cf">
-                            <span className="cf-l">Fecha</span>
-                            <span className="cf-v">{c.nextDate}</span>
-                          </div>
-                        </div>
-                        {c.notes && <div className="card-note">{c.notes}</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11}}>
+            <div style={card}>
+              <div style={{fontWeight:700,fontSize:12.5,color:"#0F172A",marginBottom:2}}>Pipeline por etapa</div>
+              <div style={{fontSize:10.5,color:"#94A3B8",marginBottom:12}}>Valor total por etapa</div>
+              <ResponsiveContainer width="100%" height={150}>
+                <BarChart data={chartData} margin={{top:4,right:4,left:-24,bottom:4}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false}/>
+                  <XAxis dataKey="name" tick={{fontSize:9,fill:"#94A3B8"}} axisLine={false} tickLine={false}/>
+                  <YAxis tick={{fontSize:9,fill:"#CBD5E1"}} axisLine={false} tickLine={false}/>
+                  <Tooltip content={<CustomTip/>}/>
+                  <Bar dataKey="Valor" radius={[5,5,0,0]} maxBarSize={42}>
+                    {chartData.map((e,i)=><Cell key={i} fill={e.color}/>)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-          </main>
-        </div>
+            <div style={card}>
+              <div style={{fontWeight:700,fontSize:12.5,color:"#0F172A",marginBottom:2}}>Contactos por estado</div>
+              <div style={{fontSize:10.5,color:"#94A3B8",marginBottom:12}}>Distribución actual</div>
+              <ResponsiveContainer width="100%" height={150}>
+                <PieChart>
+                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={36} outerRadius={56} paddingAngle={3} dataKey="value">
+                    {pieData.map((e,i)=><Cell key={i} fill={e.color}/>)}
+                  </Pie>
+                  <Tooltip formatter={(v,_,p)=>[v,p.payload.name]}/>
+                  <Legend iconType="circle" iconSize={7} wrapperStyle={{fontSize:"10px"}}/>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div>
+            <div style={{fontWeight:700,fontSize:12.5,color:"#0F172A",marginBottom:11,display:"flex",alignItems:"center",gap:6}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Contactos del pipeline
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:10}}>
+              {contacts.map(c => {
+                const m = STATUS_META[c.status]||{color:"#94A3B8",bg:"#F8FAFC",text:"#64748B"};
+                const flash = flashId===c.id;
+                return (
+                  <div key={c.id} style={{background:"#fff",borderRadius:12,padding:14,position:"relative",overflow:"hidden",
+                    border:`1px solid ${flash?"#3B82F6":"#E2E8F0"}`,boxShadow:flash?"0 0 0 3px rgba(59,130,246,.1)":"none",
+                    transition:"border-color .5s,box-shadow .5s"}}>
+                    <div style={{position:"absolute",top:0,left:0,right:0,height:2.5,background:m.color,opacity:.85}}/>
+                    <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:11}}>
+                      <div style={{width:34,height:34,borderRadius:8,background:m.bg,color:m.text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:11,flexShrink:0}}>{c.init}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:700,fontSize:12.5,color:"#0F172A",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
+                        <div style={{fontSize:10,color:"#94A3B8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.company}</div>
+                      </div>
+                      <div style={{padding:"2px 7px",borderRadius:5,background:m.bg,color:m.text,fontSize:9,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{c.status}</div>
+                    </div>
+                    {[["Valor",fmt(c.value),c.value>0],["Próx. acción",c.nextAction,false],["Fecha",c.nextDate,false]].map(([l,v,acc])=>(
+                      <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #F8FAFC",fontSize:11}}>
+                        <span style={{color:"#94A3B8",fontWeight:500}}>{l}</span>
+                        <span style={{color:acc?"#2563EB":"#334155",fontWeight:600,maxWidth:"55%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"right"}}>{v}</span>
+                      </div>
+                    ))}
+                    {c.notes&&<div style={{marginTop:8,padding:"5px 8px",background:"#F8FAFC",borderRadius:6,fontSize:10,color:"#64748B",fontStyle:"italic",lineHeight:1.5}}>{c.notes}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </main>
       </div>
-    </>
+    </div>
   );
 }
