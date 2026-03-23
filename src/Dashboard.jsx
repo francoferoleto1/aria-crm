@@ -797,19 +797,22 @@ export default function Dashboard({user,onLogout}) {
               </div>
             ))}
             {processing&&<div style={{display:"flex",alignItems:"center",gap:5,padding:"7px 11px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:11,fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:"#94A3B8",alignSelf:"flex-start"}}>
-              {[0,.15,.3].map((d,i)=><span key={i} style={{display:"inline-block",width:4,height:4,borderRadius:"50%",background:"#3B82F6",animation:`bounce 1s \${d}s infinite`}}/>)}
+              {[0,.15,.3].map((d,i)=><span key={i} style={{display:"inline-block",width:4,height:4,borderRadius:"50%",background:"#3B82F6",animation:`bounce 1s ${d}s infinite`}}/>)}
               <span style={{marginLeft:3}}>Procesando...</span>
             </div>}
             <div ref={bottom}/>
           </div>
           <div style={{padding:"10px 12px 20px",borderTop:"1px solid #F1F5F9",background:"#fff"}}>
-            {micState!=="idle"&&<div style={{marginBottom:7,padding:"5px 9px",borderRadius:6,background:micState==="listening"?"#EFF6FF":"#FEF2F2",border:`1px solid \${micState==="listening"?"#BFDBFE":"#FECACA"}`,fontSize:10,color:micState==="listening"?"#1D4ED8":"#B91C1C",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
+            {micState!=="idle"&&<div style={{marginBottom:7,padding:"5px 9px",borderRadius:6,
+              background:micState==="listening"?"#EFF6FF":"#FEF2F2",
+              border:micState==="listening"?"1px solid #BFDBFE":"1px solid #FECACA",
+              fontSize:10,color:micState==="listening"?"#1D4ED8":"#B91C1C",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
               {micState==="listening"&&<span style={{width:5,height:5,borderRadius:"50%",background:"#2563EB",display:"inline-block",animation:"pulse 1s infinite",flexShrink:0}}/>}
-              <span>{micState==="listening"?`🎙\${interim?` \`"\${interim}"\`:"..."}`:micState==="requesting"?"Solicitando...":"Error de micrófono"}</span>
+              <span>{micState==="listening"?(interim?`🎙 "${interim}"`:"🎙 ..."):micState==="requesting"?"Solicitando...":"Error de micrófono"}</span>
             </div>}
             <div style={{display:"flex",gap:7,alignItems:"flex-end"}}>
               <button onClick={micState==="listening"?stopListen:startListen} disabled={micState==="requesting"}
-                style={{width:40,height:40,borderRadius:9,flexShrink:0,border:`1.5px solid \${micC.border}`,background:micC.bg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",animation:micC.anim}}>
+                style={{width:40,height:40,borderRadius:9,flexShrink:0,border:"1.5px solid "+micC.border,background:micC.bg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",animation:micC.anim}}>
                 {micState==="listening"?<svg width="13" height="13" viewBox="0 0 24 24" fill={micC.icon} stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>:<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={micC.icon} strokeWidth="2"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>}
               </button>
               <textarea style={{flex:1,background:"#F8FAFC",border:"1.5px solid #E2E8F0",borderRadius:9,padding:"9px 11px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,color:"#0F172A",resize:"none",minHeight:40,maxHeight:90,lineHeight:1.5}}
