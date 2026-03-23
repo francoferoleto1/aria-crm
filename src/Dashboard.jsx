@@ -2,8 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend, LineChart, Line } from "recharts";
 import { supabase } from "./supabase.js";
 
-const GROQ_KEY   = "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";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+// Key de Groq guardada en Vercel como variable de entorno — nunca en el browser
 
 const STATUS_META = {
   "Nuevo contacto":    {color:"#6366F1",bg:"#EEF2FF",text:"#4338CA"},
@@ -114,15 +113,22 @@ Etapas oportunidad válidas: "Prospección","Calificación","Demo","Propuesta","
 Estados tarea válidos: "Pendiente","En progreso","Completada"`;
 
 async function callGroq(msg, data) {
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions",{
-    method:"POST",
-    headers:{"Content-Type":"application/json","Authorization":`Bearer ${GROQ_KEY}`},
-    body:JSON.stringify({model:GROQ_MODEL,max_tokens:800,temperature:0.15,
-      messages:[{role:"system",content:buildSystemPrompt(data)},{role:"user",content:msg}]})
+  // Llama a nuestra Vercel Serverless Function — la key nunca toca el browser
+  const res = await fetch("/api/agent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      system: buildSystemPrompt(data),
+      messages: [{ role: "user", content: msg }],
+      max_tokens: 800,
+    }),
   });
-  if(!res.ok) throw new Error(`Groq ${res.status}`);
-  const d = await res.json();
-  return JSON.parse(d.choices[0].message.content.trim().replace(/```json|```/g,"").trim());
+  if (!res.ok) throw new Error(`Error del servidor: ${res.status}`);
+  const data2 = await res.json();
+  if (data2.error) throw new Error(data2.error);
+  if (data2.parsed) return data2.parsed;
+  // Respuesta de texto (general/briefing)
+  return { action: "general", reply: data2.text };
 }
 
 // ── Utils ────────────────────────────────────────────────────────────────────
@@ -191,6 +197,7 @@ export default function Dashboard({user,onLogout}) {
   const [resetting,    setResetting]    = useState(false);
   const [showExport,   setShowExport]   = useState(false);
   const [draftModal,   setDraftModal]   = useState(null);
+  const [showMobileAgent, setShowMobileAgent] = useState(false);
   const [messages,     setMessages]     = useState([{id:0,role:"agent",ts:new Date(),
     text:`Hola ${user.email.split("@")[0]} 👋 Soy ARIA.\n\nTengo acceso a todo el CRM: pipeline, oportunidades, contratos, tareas y emails.\n\nProbá decirme "¿Cómo está el pipeline?" o "Generá el email de seguimiento para Diego Torres".`}]);
 
@@ -385,9 +392,30 @@ export default function Dashboard({user,onLogout}) {
         @keyframes livePulse{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.4)}50%{box-shadow:0 0 0 7px rgba(16,185,129,0)}}
         @keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.3}40%{transform:translateY(-4px);opacity:1}}
         @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
         textarea:focus{outline:none!important;border-color:#93C5FD!important;background:#fff!important}
         textarea::placeholder{color:#CBD5E1}
         tr:hover td{background:#FAFBFF}
+
+        /* ── MOBILE ── */
+        @media(max-width:768px){
+          .desktop-sidebar{display:none!important}
+          .desktop-agent{display:none!important}
+          .desktop-nav-extras{display:none!important}
+          .kpi-grid{grid-template-columns:1fr 1fr!important}
+          .chart-grid{grid-template-columns:1fr!important}
+          .cards-grid{grid-template-columns:1fr!important}
+          .opp-table{display:none!important}
+          .opp-cards{display:flex!important}
+          .main-content{padding:12px!important}
+          .nav-logo-sub{display:none!important}
+        }
+        @media(min-width:769px){
+          .mobile-bottom-nav{display:none!important}
+          .mobile-agent-fab{display:none!important}
+          .opp-cards{display:none!important}
+        }
       `}</style>
 
       {/* NAV */}
@@ -425,7 +453,7 @@ export default function Dashboard({user,onLogout}) {
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
 
         {/* SIDEBAR */}
-        <div style={{width:188,flexShrink:0,background:"#fff",borderRight:"1px solid #E2E8F0",display:"flex",flexDirection:"column",padding:"12px 8px",gap:2,overflowY:"auto"}}>
+        <div className="desktop-sidebar" style={{width:188,flexShrink:0,background:"#fff",borderRight:"1px solid #E2E8F0",display:"flex",flexDirection:"column",padding:"12px 8px",gap:2,overflowY:"auto"}}>
           {NAV.map(n=>{
             const active=activeModule===n.id;
             const count = n.id==="tasks"?pendTasks:n.id==="contracts"?expContracts:n.id==="email"?emails.filter(e=>!e.sent).length:null;
@@ -446,8 +474,8 @@ export default function Dashboard({user,onLogout}) {
           </div>
         </div>
 
-        {/* AGENT */}
-        <div style={{width:320,flexShrink:0,display:"flex",flexDirection:"column",background:"#fff",borderRight:"1px solid #E2E8F0"}}>
+        {/* AGENT - desktop */}
+        <div className="desktop-agent" style={{width:320,flexShrink:0,display:"flex",flexDirection:"column",background:"#fff",borderRight:"1px solid #E2E8F0"}}>
           <div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",display:"flex",alignItems:"center",gap:7}}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2m-3.5-7.5-1.5 1.5m-10 10-1.5 1.5m0-13 1.5 1.5m10 10 1.5 1.5"/></svg>
             <div><div style={{fontWeight:700,fontSize:12,color:"#0F172A"}}>Agente ARIA</div><div style={{fontSize:9,color:"#94A3B8"}}>Groq · Llama 3.3 70B · Todos los módulos</div></div>
@@ -499,7 +527,7 @@ export default function Dashboard({user,onLogout}) {
           {/* ── OVERVIEW ── */}
           {activeModule==="overview"&&<>
             <div style={{fontWeight:700,fontSize:14,color:"#0F172A"}}>Resumen general</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:11}}>
+            <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:11}}>
               {[
                 {label:"Pipeline activo",  value:fmt(pipeline),         sub:`${contacts.filter(c=>!["Cerrado ganado","Cerrado perdido"].includes(c.status)).length} contactos activos`, accent:"#2563EB"},
                 {label:"Oportunidades",     value:fmt(oppValue),          sub:`${openOpps.length} abiertas · ${opportunities.filter(o=>o.status==="Cerrada"&&o.stage==="Ganada").length} ganadas`, accent:"#7C3AED"},
@@ -507,7 +535,7 @@ export default function Dashboard({user,onLogout}) {
                 {label:"Tareas pendientes", value:String(pendTasks),      sub:`${tasks.filter(t=>t.priority==="Alta"&&t.status!=="Completada").length} de alta prioridad`, accent:pendTasks>4?"#EF4444":"#0F172A"},
               ].map((k,i)=><div key={i} style={{...card,padding:"14px 16px"}}><div style={{fontSize:10,color:"#94A3B8",fontWeight:700,textTransform:"uppercase",letterSpacing:".07em",marginBottom:6}}>{k.label}</div><div style={{fontSize:21,fontWeight:800,color:k.accent,letterSpacing:"-.5px"}}>{k.value}</div><div style={{fontSize:10.5,color:"#94A3B8",marginTop:2}}>{k.sub}</div></div>)}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11}}>
+            <div className="chart-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11}}>
               <div style={card}>
                 <div style={{fontWeight:700,fontSize:12.5,color:"#0F172A",marginBottom:2}}>Pipeline por etapa</div>
                 <div style={{fontSize:10.5,color:"#94A3B8",marginBottom:10}}>Contactos activos</div>
@@ -725,6 +753,76 @@ export default function Dashboard({user,onLogout}) {
         </main>
       </div>
 
+
+      {/* ── MOBILE BOTTOM NAV ── */}
+      <div className="mobile-bottom-nav" style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:"1px solid #E2E8F0",display:"flex",alignItems:"center",justifyContent:"space-around",padding:"8px 4px 12px",zIndex:50,boxShadow:"0 -4px 12px rgba(0,0,0,.06)"}}>
+        {NAV.slice(0,5).map(n=>{
+          const active=activeModule===n.id;
+          return<button key={n.id} onClick={()=>{setActiveModule(n.id);setShowMobileAgent(false);}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minWidth:52}}>
+            <span style={{color:active?"#2563EB":"#94A3B8",transition:"color .15s"}}>{n.icon}</span>
+            <span style={{fontSize:9.5,fontWeight:active?700:500,color:active?"#2563EB":"#94A3B8"}}>{n.label}</span>
+          </button>;
+        })}
+        {/* Agent FAB in bottom nav */}
+        <button onClick={()=>setShowMobileAgent(p=>!p)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minWidth:52}}>
+          <span style={{width:28,height:28,borderRadius:8,background:showMobileAgent?"linear-gradient(135deg,#2563EB,#7C3AED)":"#F1F5F9",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={showMobileAgent?"#fff":"#94A3B8"} strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2m-3.5-7.5-1.5 1.5m-10 10-1.5 1.5m0-13 1.5 1.5m10 10 1.5 1.5"/></svg>
+          </span>
+          <span style={{fontSize:9.5,fontWeight:showMobileAgent?700:500,color:showMobileAgent?"#2563EB":"#94A3B8"}}>ARIA</span>
+        </button>
+      </div>
+
+      {/* ── MOBILE AGENT DRAWER ── */}
+      {showMobileAgent&&<>
+        <div onClick={()=>setShowMobileAgent(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.3)",zIndex:60,animation:"fadeIn .2s ease"}}/>
+        <div style={{position:"fixed",bottom:0,left:0,right:0,height:"75vh",background:"#fff",borderRadius:"18px 18px 0 0",zIndex:70,display:"flex",flexDirection:"column",animation:"slideUp .3s ease",boxShadow:"0 -8px 32px rgba(0,0,0,.15)"}}>
+          <div style={{padding:"12px 16px 8px",borderBottom:"1px solid #F1F5F9",display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:32,height:4,borderRadius:2,background:"#E2E8F0",margin:"0 auto 8px",position:"absolute",top:8,left:"50%",transform:"translateX(-50%)"}}/>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2m-3.5-7.5-1.5 1.5m-10 10-1.5 1.5m0-13 1.5 1.5m10 10 1.5 1.5"/></svg>
+            <div style={{flex:1}}><div style={{fontWeight:700,fontSize:12.5,color:"#0F172A"}}>Agente ARIA</div><div style={{fontSize:9.5,color:"#94A3B8"}}>Groq · Llama 3.3 70B</div></div>
+            <button onClick={()=>setShowMobileAgent(false)} style={{background:"none",border:"none",cursor:"pointer",color:"#94A3B8",fontSize:20,lineHeight:1,padding:"0 4px"}}>×</button>
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:12,display:"flex",flexDirection:"column",gap:9}}>
+            {messages.map(m=>(
+              <div key={m.id} style={{display:"flex",flexDirection:"column",alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"90%",animation:"fadeUp .2s ease"}}>
+                <div style={{padding:"8px 11px",borderRadius:11,fontFamily:"'JetBrains Mono',monospace",fontSize:11,lineHeight:1.7,whiteSpace:"pre-wrap",
+                  ...(m.role==="user"?{background:"linear-gradient(135deg,#2563EB,#7C3AED)",color:"#fff",borderBottomRightRadius:3}:{background:"#F8FAFC",border:"1px solid #E2E8F0",color:"#334155",borderBottomLeftRadius:3})}}>
+                  {m.text}
+                  {m.updateData&&pending&&<div style={{display:"flex",gap:6,marginTop:8}}>
+                    <button onClick={()=>{confirm();setShowMobileAgent(false);}} style={{padding:"5px 13px",background:"linear-gradient(135deg,#2563EB,#7C3AED)",color:"#fff",border:"none",borderRadius:7,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,cursor:"pointer"}}>✓ Confirmar</button>
+                    <button onClick={reject} style={{padding:"5px 11px",background:"#fff",color:"#64748B",border:"1px solid #E2E8F0",borderRadius:7,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:11,cursor:"pointer"}}>Descartar</button>
+                  </div>}
+                </div>
+                <div style={{fontSize:9,color:"#CBD5E1",marginTop:2,padding:"0 2px",textAlign:m.role==="user"?"right":"left"}}>{hms(m.ts)}</div>
+              </div>
+            ))}
+            {processing&&<div style={{display:"flex",alignItems:"center",gap:5,padding:"7px 11px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:11,fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:"#94A3B8",alignSelf:"flex-start"}}>
+              {[0,.15,.3].map((d,i)=><span key={i} style={{display:"inline-block",width:4,height:4,borderRadius:"50%",background:"#3B82F6",animation:`bounce 1s \${d}s infinite`}}/>)}
+              <span style={{marginLeft:3}}>Procesando...</span>
+            </div>}
+            <div ref={bottom}/>
+          </div>
+          <div style={{padding:"10px 12px 20px",borderTop:"1px solid #F1F5F9",background:"#fff"}}>
+            {micState!=="idle"&&<div style={{marginBottom:7,padding:"5px 9px",borderRadius:6,background:micState==="listening"?"#EFF6FF":"#FEF2F2",border:`1px solid \${micState==="listening"?"#BFDBFE":"#FECACA"}`,fontSize:10,color:micState==="listening"?"#1D4ED8":"#B91C1C",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
+              {micState==="listening"&&<span style={{width:5,height:5,borderRadius:"50%",background:"#2563EB",display:"inline-block",animation:"pulse 1s infinite",flexShrink:0}}/>}
+              <span>{micState==="listening"?`🎙\${interim?` \`"\${interim}"\`:"..."}`:micState==="requesting"?"Solicitando...":"Error de micrófono"}</span>
+            </div>}
+            <div style={{display:"flex",gap:7,alignItems:"flex-end"}}>
+              <button onClick={micState==="listening"?stopListen:startListen} disabled={micState==="requesting"}
+                style={{width:40,height:40,borderRadius:9,flexShrink:0,border:`1.5px solid \${micC.border}`,background:micC.bg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",animation:micC.anim}}>
+                {micState==="listening"?<svg width="13" height="13" viewBox="0 0 24 24" fill={micC.icon} stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>:<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={micC.icon} strokeWidth="2"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>}
+              </button>
+              <textarea style={{flex:1,background:"#F8FAFC",border:"1.5px solid #E2E8F0",borderRadius:9,padding:"9px 11px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,color:"#0F172A",resize:"none",minHeight:40,maxHeight:90,lineHeight:1.5}}
+                placeholder='Dictá una actualización...'
+                value={input} onChange={e=>setInput(e.target.value)} onKeyDown={handleKey} rows={1}/>
+              <button onClick={send} disabled={processing||!input.trim()}
+                style={{width:40,height:40,borderRadius:9,border:"none",flexShrink:0,background:processing||!input.trim()?"#E2E8F0":"linear-gradient(135deg,#2563EB,#7C3AED)",cursor:processing||!input.trim()?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </>}
       {/* Email modal */}
       {draftModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setDraftModal(null)}>
         <div style={{background:"#fff",borderRadius:16,padding:28,maxWidth:600,width:"100%",maxHeight:"80vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,.2)"}} onClick={e=>e.stopPropagation()}>
