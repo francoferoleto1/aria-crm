@@ -112,14 +112,15 @@ Estados contacto válidos: "Nuevo contacto","Prospecto","Propuesta enviada","En 
 Etapas oportunidad válidas: "Prospección","Calificación","Demo","Propuesta","Negociación","Cierre","Ganada","Perdida"
 Estados tarea válidos: "Pendiente","En progreso","Completada"`;
 
-async function callGroq(msg, data) {
-  // Llama a nuestra Vercel Serverless Function — la key nunca toca el browser
+async function callGroq(msg, data, history = []) {
+  // history: turnos anteriores [{role:"user"|"assistant", content:"..."}]
+  // El sistema de verdad de los datos siempre se actualiza en el system prompt
   const res = await fetch("/api/agent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       system: buildSystemPrompt(data),
-      messages: [{ role: "user", content: msg }],
+      messages: [...history, { role: "user", content: msg }],
       max_tokens: 800,
     }),
   });
@@ -127,7 +128,6 @@ async function callGroq(msg, data) {
   const data2 = await res.json();
   if (data2.error) throw new Error(data2.error);
   if (data2.parsed) return data2.parsed;
-  // Respuesta de texto (general/briefing)
   return { action: "general", reply: data2.text };
 }
 
@@ -244,7 +244,16 @@ export default function Dashboard({user,onLogout}) {
     if(micState==="listening")stopListen();
     setInput(""); addMsg("user",t); setProcessing(true);
     try{
-      const p=await callGroq(t,{contacts,opportunities,contracts,tasks});
+      // Construir historial de conversacion: ultimos 10 turnos para no sobrepasar tokens
+      // Excluimos mensajes con updateData pendiente (ya fueron procesados)
+      const history = messages
+        .filter(m => m.role === "user" || (m.role === "agent" && !m.updateData))
+        .slice(-10)
+        .map(m => ({
+          role: m.role === "user" ? "user" : "assistant",
+          content: m.text,
+        }));
+      const p=await callGroq(t,{contacts,opportunities,contracts,tasks},history);
       if(p.action==="general"||p.action==="briefing"){
         addMsg("agent",p.reply||"Procesado."); setProcessing(false); return;
       }
