@@ -92,22 +92,27 @@ TAREAS: ${data.tasks.map(t=>`[${t.id}] ${t.title} — ${t.assigned_to} — ${t.s
 
 Analizá el mensaje del usuario y respondé con JSON (sin markdown):
 {
-  "action": "update_contact|update_opportunity|update_task|create_task|draft_email|briefing|general",
-  "entityId": <número o null>,
+  "action": "update_contact|update_opportunity|create_opportunity|update_task|create_task|draft_email|briefing|general",
+  "entityId": <número o null — solo para updates>,
   "entityType": "contact|opportunity|task|email",
-  "contactName": "<nombre si aplica>",
+  "contactName": "<nombre del contacto si aplica>",
   "updates": {
     "status": null, "value": null, "stage": null, "probability": null,
     "nextAction": null, "nextDate": null, "notes": null,
     "taskStatus": null, "assignedTo": null, "priority": null,
-    "emailSubject": null, "emailBody": null
+    "emailSubject": null, "emailBody": null,
+    "oppTitle": null, "oppCompany": null, "oppOwner": null, "oppCloseDate": null
   },
   "summary": "<una línea de qué va a hacer ARIA>",
   "reply": "<mensaje conversacional para el vendedor, en español argentino>"
 }
 
-Para briefings o consultas generales, ponés action:"general" y escribís la respuesta en "reply".
-Para generar un email, ponés action:"draft_email" y completás emailSubject y emailBody con el borrador completo.
+Reglas importantes:
+- Si el usuario pide CREAR una oportunidad nueva: action="create_opportunity", entityId=null, completá oppTitle, oppCompany, value, stage, probability, oppOwner, oppCloseDate en updates.
+- Si el usuario pide ACTUALIZAR una oportunidad existente: action="update_opportunity", entityId=<id de la oportunidad>.
+- Para briefings o consultas: action="general", respuesta en "reply".
+- Para emails: action="draft_email", completá emailSubject y emailBody.
+- Para crear tarea: action="create_task".
 Estados contacto válidos: "Nuevo contacto","Prospecto","Propuesta enviada","En negociación","Cerrado ganado","Cerrado perdido"
 Etapas oportunidad válidas: "Prospección","Calificación","Demo","Propuesta","Negociación","Cierre","Ganada","Perdida"
 Estados tarea válidos: "Pendiente","En progreso","Completada"`;
@@ -239,9 +244,19 @@ export default function Dashboard({user,onLogout}) {
   const handleVoiceError=useCallback(msg=>addMsg("agent",`⚠️ ${msg}`),[]);
   const{state:micState,interim,start:startListen,stop:stopListen}=useVoice({onTranscript:handleTranscript,onError:handleVoiceError});
 
+  const CONFIRM_WORDS = ["si","sí","confirmo","confirmado","dale","ok","okay","hacelo","crealo","guardalo","sí confirmo","si confirmo","yes","listo"];
   const send=async()=>{
     const t=input.trim(); if(!t||processing)return;
     if(micState==="listening")stopListen();
+    // Si hay un pending y el usuario escribe una confirmación de texto → ejecutar confirm()
+    if(pending && CONFIRM_WORDS.some(w => t.toLowerCase().trim()===w || t.toLowerCase().trim().startsWith(w+" "))) {
+      setInput(""); addMsg("user",t); confirm(); return;
+    }
+    // Si hay un pending y el usuario escribe un rechazo → ejecutar reject()
+    const REJECT_WORDS = ["no","cancelar","descartar","nope","no gracias"];
+    if(pending && REJECT_WORDS.some(w => t.toLowerCase().trim()===w)) {
+      setInput(""); addMsg("user",t); reject(); return;
+    }
     setInput(""); addMsg("user",t); setProcessing(true);
     try{
       // Construir historial de conversacion: ultimos 10 turnos para no sobrepasar tokens
@@ -261,6 +276,21 @@ export default function Dashboard({user,onLogout}) {
         const id=mid.current++;
         setMessages(prev=>[...prev,{id,role:"agent",ts:new Date(),
           text:`Borrador generado para **${p.contactName}**.\n\n📧 ${p.updates.emailSubject}\n\n¿Lo guardo en Email?`,
+          updateData:p}]);
+        setPending({...p,msgId:id}); setProcessing(false); return;
+      }
+      if(p.action==="create_opportunity"){
+        const id=mid.current++;
+        const oppPreview = [
+          p.updates?.oppTitle && `📌 ${p.updates.oppTitle}`,
+          p.updates?.oppCompany && `🏢 ${p.updates.oppCompany}`,
+          p.updates?.value && `💰 $${p.updates.value.toLocaleString("es-AR")}`,
+          p.updates?.stage && `📊 ${p.updates.stage}`,
+          p.updates?.oppOwner && `👤 ${p.updates.oppOwner}`,
+          p.updates?.oppCloseDate && `📅 Cierre: ${p.updates.oppCloseDate}`,
+        ].filter(Boolean).join("\n");
+        setMessages(prev=>[...prev,{id,role:"agent",ts:new Date(),
+          text:`Nueva oportunidad para crear:\n\n${oppPreview}\n\n¿La creo en el sistema?`,
           updateData:p}]);
         setPending({...p,msgId:id}); setProcessing(false); return;
       }
@@ -290,6 +320,28 @@ export default function Dashboard({user,onLogout}) {
         const{data:ed}=await supabase.from("email_drafts").insert({contact_id:cid,contact_name:contactName||"",company:co,subject:updates.emailSubject,body:updates.emailBody||""}).select().single();
         if(ed){setEmails(prev=>[ed,...prev]);setDraftModal(ed);setActiveModule("email");}
         addMsg("agent",`✓ Email guardado en borradores. Podés verlo en el módulo Email.`);
+      } else if(action==="create_opportunity"){
+        const cid=contacts.find(c=>c.name.toLowerCase().includes((contactName||"").toLowerCase()))?.id||null;
+        const newOpp = {
+          contact_id:    cid,
+          contact_name:  contactName||"",
+          company:       updates.oppCompany||contacts.find(c=>c.id===cid)?.company||"",
+          title:         updates.oppTitle||summary,
+          stage:         updates.stage||"Prospección",
+          value:         updates.value||0,
+          probability:   updates.probability||10,
+          close_date:    updates.oppCloseDate||null,
+          owner:         updates.oppOwner||"Sin asignar",
+          notes:         updates.notes||null,
+          status:        "Abierta",
+        };
+        const{data:od, error:oe}=await supabase.from("opportunities").insert(newOpp).select().single();
+        if(oe) throw oe;
+        if(od){
+          setOpportunities(prev=>[...prev,od]);
+          setActiveModule("opps");
+        }
+        addMsg("agent",`✓ Oportunidad "${newOpp.title}" creada para ${contactName}. Podés verla en el módulo Oportunidades.`);
       } else if(action==="create_task"){
         const{data:td}=await supabase.from("tasks").insert({contact_name:contactName||null,title:summary,priority:updates.priority||"Media",due_date:updates.nextDate||null,assigned_to:updates.assignedTo||"Sin asignar",status:"Pendiente",type:"Comercial"}).select().single();
         if(td){setTasks(prev=>[...prev,td]);setActiveModule("tasks");}
