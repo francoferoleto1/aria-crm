@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from "recharts";
 import { supabase } from "./supabase.js";
+import TendersModule from './TendersModule';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const STATUS_META = {
@@ -159,6 +160,7 @@ const NAV = [
   {id:"overview",  label:"Resumen",       icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>},
   {id:"pipeline",  label:"Pipeline",      icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>},
   {id:"opps",      label:"Oportunidades", icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>},
+  {id:"tenders",   label:"Licitaciones", icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>},
   {id:"contracts", label:"Contratos",     icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>},
   {id:"email",     label:"Email",         icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>},
   {id:"tasks",     label:"Tareas",        icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>},
@@ -346,6 +348,7 @@ export default function Dashboard({user, onLogout}) {
   const [oppDetail,    setOppDetail]     = useState(null);
   const [showNewContract, setShowNewContract] = useState(false);
   const [showMobileAgent, setShowMobileAgent] = useState(false);
+  const [tenderNewCount, setTenderNewCount] = useState(0);
   const [globalSearch, setGlobalSearch]  = useState("");
   const [showSearch,   setShowSearch]    = useState(false);
 
@@ -381,6 +384,17 @@ export default function Dashboard({user, onLogout}) {
     textareaRef.current.style.height = "auto";
     textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
   }, [input]);
+
+  useEffect(() => {
+    const fetchTenderCount = async () => {
+      const { count } = await supabase
+        .from('tender_matches')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'new');
+      setTenderNewCount(count || 0);
+    };
+    fetchTenderCount();
+  }, []);
 
   const loadAll = async () => {
     setLoading(true); setDbError(null);
@@ -723,7 +737,17 @@ export default function Dashboard({user, onLogout}) {
             const count=n.id==="tasks"?pendTasks:n.id==="contracts"?expContracts:n.id==="email"?emails.filter(e=>!e.sent).length:null;
             return <button key={n.id} onClick={()=>setActiveModule(n.id)} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:8,border:"none",background:active?"linear-gradient(135deg,#EFF6FF,#F5F3FF)":"transparent",cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12.5,fontWeight:active?700:500,color:active?"#2563EB":"#64748B",transition:"all .15s",width:"100%",textAlign:"left"}}>
               <span style={{color:active?"#2563EB":"#94A3B8",flexShrink:0}}>{n.icon}</span>
-              {n.label}
+              {n.id === "tenders" ? (
+                <>Licitaciones {tenderNewCount > 0 && <span style={{
+                  background: '#ef4444',
+                  color: 'white',
+                  borderRadius: '50%',
+                  padding: '2px 7px',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  marginLeft: 6
+                }}>{tenderNewCount}</span>}</>
+              ) : n.label}
               {count>0&&<span style={{marginLeft:"auto",background:active?"#2563EB":"#E2E8F0",color:active?"#fff":"#64748B",padding:"0 6px",borderRadius:10,fontSize:10,fontWeight:700}}>{count}</span>}
             </button>;
           })}
@@ -898,6 +922,9 @@ export default function Dashboard({user, onLogout}) {
                 {activity.map(a=>{const meta=STATUS_META[a.changes?.status]||null;return<div key={a.id} style={{...card,padding:"12px 16px",display:"flex",gap:11,alignItems:"flex-start"}}><div style={{width:30,height:30,borderRadius:7,background:"#EFF6FF",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div><div style={{flex:1,minWidth:0}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}><span style={{fontWeight:700,fontSize:12,color:"#0F172A"}}>{a.contact_name}</span>{meta&&<Badge label={a.changes.status} meta={meta}/>}{a.changes?.value!=null&&<span style={{fontSize:10,color:"#2563EB",fontWeight:600}}>{fmt(a.changes.value)}</span>}</div><div style={{fontSize:11,color:"#64748B"}}>{a.summary}</div></div><div style={{fontSize:9.5,color:"#CBD5E1",whiteSpace:"nowrap",flexShrink:0}}>{relTime(a.created_at)}</div></div>;})}
               </div>
             </>}
+
+            {/* LICITACIONES */}
+            {activeModule==="tenders"&&<TendersModule />}
 
           </div>
         </main>
